@@ -38,7 +38,7 @@ typedef struct ASTUnit {
 	exit(0);\
 }
 // You may set DEBUG=1 to debug. Remember setting back to 0 before submit.
-#define DEBUG 0
+#define DEBUG 1
 // Split the input char array into token linked list.
 Token *lexer(const char *in);
 // Create a new token.
@@ -84,6 +84,10 @@ int main() {
 		if (len == 0) continue;
 		AST *ast_root = parser(content, len);
 		semantic_check(ast_root);
+
+		AST_print(ast_root);
+		token_print(content, len);
+		
 		codegen(ast_root);
 		free(content);
 		freeAST(ast_root);
@@ -225,9 +229,22 @@ AST *parse(Token *arr, int l, int r, GrammarState S) {
 		case MUL_EXPR:
 			// TODO: Implement MUL_EXPR.
 			// hint: Take ADD_EXPR as reference.
+			if((nxt = findNextSection(arr, r, l, condMUL)) != -1) {
+				now = new_AST(arr[nxt].kind, 0);
+				now->lhs = parse(arr, l, nxt - 1, MUL_EXPR);
+				now->rhs = parse(arr, nxt + 1, r, UNARY_EXPR);
+				return now;
+			}
+			return parse(arr, l, r, UNARY_EXPR);
 		case UNARY_EXPR:
 			// TODO: Implement UNARY_EXPR.
 			// hint: Take POSTFIX_EXPR as reference.
+			if (arr[l].kind == PREINC || arr[l].kind == PREDEC) {
+				now = new_AST(arr[l].kind, 0);
+				now->mid = parse(arr, l + 1, r, UNARY_EXPR);
+				return now;
+			}
+			return parse(arr, l, r, POSTFIX_EXPR);
 		case POSTFIX_EXPR:
 			if (arr[r].kind == PREINC || arr[r].kind == PREDEC) {
 				// translate "PREINC", "PREDEC" into "POSTINC", "POSTDEC"
@@ -301,11 +318,79 @@ void semantic_check(AST *now) {
 	// TODO: Implement the remaining semantic_check code.
 	// hint: Follow the instruction above and ASSIGN-part code to implement.
 	// hint: Semantic of each node needs to be checked recursively (from the current node to lhs/mid/rhs node).
+	if (now->kind == PREINC || now->kind == PREDEC) {
+		AST *tmp = now->mid;
+		while (tmp->kind == RPAR) tmp = tmp->mid;
+		if (tmp->kind != IDENTIFIER)
+			err("Rvalue is required as rigth operand of pre-increment.");
+	}
+	if (now->kind == POSTINC || now->kind == POSTDEC) {
+		AST *tmp = now->mid;
+		while (tmp->kind == LPAR) tmp = tmp->mid;
+		if (tmp->kind != IDENTIFIER)
+			err("Lvalue is required as left operand of post-increment.");
+	}
+	semantic_check(now->lhs);
+	semantic_check(now->mid);
+	semantic_check(now->rhs);
 }
+
+typedef enum {
+	OP_LOAD, OP_STORE, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_REM
+} OPCODE;
+
+typedef struct operand{
+	int is_mem;
+	int n;
+} OPERAND;
+
+typedef struct isa{
+	OPCODE opcode;
+	OPERAND rd, rs1, rs2;
+}ISA;
+
+OPERAND mem(int addr){
+	OPERAND opr;
+	opr.is_mem = 1;
+	opr.n = addr * 4;
+	return opr;
+}
+
+OPERAND reg(int n){
+	OPERAND opr;
+	opr.is_mem = 0;
+	opr.n = n;
+	return opr;
+}
+
+
 
 void codegen(AST *root) {
 	// TODO: Implement your codegen in your own way.
 	// You may modify the function parameter or the return type, even the whole structure as you wish.
+	if(root == NULL){
+		return;
+	}
+	AST *next_l = root->lhs, *next_r = root->rhs;
+	switch(root->kind){
+		case ASSIGN:
+		case ADD:
+		case SUB:
+		case MUL:
+		case DIV:
+		case REM:
+		case PREINC:
+		case PREDEC:
+		case POSTINC:
+		case POSTDEC:
+		case IDENTIFIER:
+		case CONSTANT:
+		case LPAR:
+		case RPAR:
+		case PLUS:
+		case MINUS:
+		case END:
+	}
 }
 
 void freeAST(AST *now) {
