@@ -38,7 +38,7 @@ typedef struct ASTUnit {
 	exit(0);\
 }
 // You may set DEBUG=1 to debug. Remember setting back to 0 before submit.
-#define DEBUG 1
+#define DEBUG 0
 // Split the input char array into token linked list.
 Token *lexer(const char *in);
 // Create a new token.
@@ -86,7 +86,7 @@ int main() {
 		semantic_check(ast_root);
 
 		AST_print(ast_root);
-		token_print(content, len);
+		// token_print(content, len);
 		
 		codegen(ast_root);
 		free(content);
@@ -339,31 +339,202 @@ typedef enum {
 	OP_LOAD, OP_STORE, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_REM
 } OPCODE;
 
-typedef struct operand{
-	int is_mem;
-	int n;
-} OPERAND;
+typedef struct{
+	int addr;
+}Memory;
 
-typedef struct isa{
+typedef struct{
+	int n;
+}Register;
+
+typedef union{
+	Register reg;
+	Memory mem;
+} Space;
+
+typedef struct{
 	OPCODE opcode;
-	OPERAND rd, rs1, rs2;
+	Register rs2;
+	Space rd, rs1;
 }ISA;
 
-OPERAND mem(int addr){
-	OPERAND opr;
-	opr.is_mem = 1;
-	opr.n = addr * 4;
-	return opr;
+int mem_addr(int n){
+	return n * 4;
 }
 
-OPERAND reg(int n){
-	OPERAND opr;
-	opr.is_mem = 0;
-	opr.n = n;
-	return opr;
+Memory mem(int addr){
+	Memory x;
+	x.addr = addr;
+	return x;
 }
 
+Register reg(int n){
+	Register x;
+	x.n = n;
+	return x;
+}
 
+#define CODE_GEN_ASSIGN_MODE 0
+#define CODE_GEN_COMPUTE_MODE 1
+
+#define RSV_RD_REG 0
+#define RSV_RS1_REG 1
+#define RSV_RS2_REG 2
+#define IDEN_X_REG 3
+#define IDEN_Y_REG 4
+#define IDEN_Z_REG 5
+#define IDEN_X 'x'
+#define IDEN_Y 'y'
+#define IDEN_Z 'z'
+#define IDEN_X_MEM 0
+#define IDEN_Y_MEM 1
+#define IDEN_Z_MEM 2
+
+Register iden_reg(int iden){
+	switch (iden){
+		case IDEN_X:
+			return reg(IDEN_X_REG);
+		case IDEN_Y:
+			return reg(IDEN_Y_REG);
+		case IDEN_Z:
+			return reg(IDEN_Z_REG);
+		default:
+			printf("No such: %d\n", iden);
+			perror("Error: No such identifier\n");
+			return reg(IDEN_X_REG);
+	}
+}
+
+void set_reg(int reg, int val){
+	if(val >= 0){
+		printf("add r%d 0 %d\n", reg, val);
+	}else{
+		printf("sub r%d 0 %d\n", reg, -val);
+	}
+}
+
+void push(Register reg, int *stack_ptr){
+	printf("store [%d] r%d\n", *stack_ptr, reg.n);
+	ISA asm_code;
+	asm_code.opcode = OP_STORE;
+	asm_code.rd = (Space)mem(*stack_ptr);
+	asm_code.rs1 = (Space)reg;
+	(*stack_ptr)+=4;
+}
+
+void pop(Register reg, int *stack_ptr){
+	(*stack_ptr)-=4;
+	printf("load r%d [%d]\n", reg.n, *stack_ptr);
+	ISA asm_code;
+	asm_code.opcode = OP_LOAD;
+	asm_code.rd = (Space)reg;
+	asm_code.rs1 = (Space)mem(*stack_ptr);	
+}
+
+void assign(int iden, int *stack_ptr){
+	Register target_reg = iden_reg(iden);
+	pop(target_reg, stack_ptr);
+}
+
+void arithmetic(OPCODE opcode, int *stack_ptr){
+	pop(reg(RSV_RS1_REG), stack_ptr);
+	pop(reg(RSV_RS2_REG), stack_ptr);
+
+	char *asm_op;
+	switch (opcode){
+		case OP_ADD:
+			asm_op = "add";
+			break;
+		case OP_SUB:
+			asm_op = "sub";
+			break;
+		case OP_MUL:
+			asm_op = "mul";
+			break;
+		case OP_DIV:
+			asm_op = "div";
+			break;
+		case OP_REM:
+			asm_op = "rem";
+			break;
+		default:
+			break;
+	}
+
+	printf("%s r%d r%d r%d\n", asm_op, RSV_RD_REG, RSV_RS1_REG, RSV_RS2_REG);
+	push(reg(RSV_RD_REG), stack_ptr);
+
+	ISA asm_code;
+	asm_code.opcode = opcode;
+	asm_code.rd = (Space)reg(RSV_RD_REG);
+	asm_code.rs1 = (Space)reg(RSV_RS1_REG);
+	asm_code.rs2 = reg(RSV_RS2_REG);
+}
+
+void inc_dec(OPCODE opcode, int *stack_ptr){
+
+}
+
+void generate_code(AST *root, int *stack_ptr, int mode){
+	if(root == NULL){
+		return;
+	}
+	AST *next_l = root->lhs, *next_r = root->rhs;
+	generate_code(next_r, stack_ptr, CODE_GEN_COMPUTE_MODE);
+	
+	int next_mode = CODE_GEN_COMPUTE_MODE;
+	if(root->kind == ASSIGN){
+		next_mode = CODE_GEN_ASSIGN_MODE;	
+	}
+	generate_code(next_l, stack_ptr, next_mode);
+
+	switch(root->kind){
+		case ASSIGN:
+			assign(root->lhs->val, stack_ptr);
+			break;
+		case ADD:
+			arithmetic(OP_ADD, stack_ptr);
+			break;
+		case SUB:
+			arithmetic(OP_ADD, stack_ptr);
+			break;
+		case MUL:
+			arithmetic(OP_MUL, stack_ptr);
+			break;
+		case DIV:
+			arithmetic(OP_DIV, stack_ptr);
+			break;
+		case REM:
+			arithmetic(OP_REM, stack_ptr);
+			break;
+		case PREINC:
+			break;
+		case PREDEC:
+			break;
+		case POSTINC:
+			break;
+		case POSTDEC:
+			break;
+		case IDENTIFIER:
+			if(mode == CODE_GEN_COMPUTE_MODE)
+				push(iden_reg(root->val), stack_ptr);
+			return;
+		case CONSTANT:
+			set_reg(RSV_RD_REG, root->val);
+			push(reg(RSV_RD_REG), stack_ptr);
+			return;
+		case LPAR:
+			break;
+		case RPAR:
+			break;
+		case PLUS:
+			break;
+		case MINUS:
+			break;
+		case END:
+			return;
+	}
+}
 
 void codegen(AST *root) {
 	// TODO: Implement your codegen in your own way.
@@ -372,25 +543,19 @@ void codegen(AST *root) {
 		return;
 	}
 	AST *next_l = root->lhs, *next_r = root->rhs;
-	switch(root->kind){
-		case ASSIGN:
-		case ADD:
-		case SUB:
-		case MUL:
-		case DIV:
-		case REM:
-		case PREINC:
-		case PREDEC:
-		case POSTINC:
-		case POSTDEC:
-		case IDENTIFIER:
-		case CONSTANT:
-		case LPAR:
-		case RPAR:
-		case PLUS:
-		case MINUS:
-		case END:
-	}
+	int stack_ptr = mem_addr(3);
+
+	// Load to register
+	printf("load r%d [%d]\n", IDEN_X_REG, mem_addr(IDEN_X_MEM));
+	printf("load r%d [%d]\n", IDEN_Y_REG, mem_addr(IDEN_Y_MEM));
+	printf("load r%d [%d]\n", IDEN_Z_REG, mem_addr(IDEN_Z_MEM));
+
+	generate_code(root, &stack_ptr, CODE_GEN_COMPUTE_MODE);
+
+	// Store back to memory
+	printf("store [%d] r%d\n", mem_addr(IDEN_X_MEM), IDEN_X_REG);
+	printf("store [%d] r%d\n", mem_addr(IDEN_Y_MEM), IDEN_Y_REG);
+	printf("store [%d] r%d\n", mem_addr(IDEN_Z_MEM), IDEN_Z_REG);
 }
 
 void freeAST(AST *now) {
