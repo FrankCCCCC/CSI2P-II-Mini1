@@ -337,6 +337,12 @@ void semantic_check(AST *now) {
 	semantic_check(now->rhs);
 }
 
+void custom_err(char *str){
+	char msg[1000] = {0};
+	sprintf(msg, "%s\n", str);
+	perror(msg);	
+}
+
 typedef enum {
 	OP_LOAD, OP_STORE, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_REM
 } OPCODE;
@@ -364,10 +370,15 @@ typedef struct space{
 	Constant constant;
 } Space;
 
-typedef struct{
+typedef struct isa{
 	OPCODE opcode;
 	Space rd, rs1, rs2;
 }ISA;
+
+typedef struct isa_node{
+	ISA isa;
+	struct isa_node *prev, *next;
+}ISA_Node;
 
 int mem_addr(int n){
 	return n * 4;
@@ -432,8 +443,10 @@ typedef enum{
 	VAR_X, VAR_Y, VAR_Z
 }VAR;
 
-// #define CODE_GEN_ASSIGN_MODE 0
-// #define CODE_GEN_COMPUTE_MODE 1
+#define CUSTOM_ERR_LEN 100
+#define OP_BUF_LEN 10
+#define SPACE_BUF_LEN 10
+#define ASM_BUF_LEN 100
 
 #define RSV_RD_REG 0
 #define RSV_RS1_REG 1
@@ -456,9 +469,10 @@ Register iden2reg(int iden){
 			return reg(IDEN_Y_REG);
 		case IDEN_Z:
 			return reg(IDEN_Z_REG);
-		default:
-			printf("No such identifier: %d\n", iden);
-			perror("Error: No such identifier, unable to get register\n");
+		default: ;
+			char buf[CUSTOM_ERR_LEN] = {0};
+			sprintf(buf, "Error: No such identifier called %d, unable to get register\n", iden);
+			custom_err(buf);
 			return reg(IDEN_X_REG);
 	}
 }
@@ -471,86 +485,206 @@ Memory iden2mem(int iden){
 			return mem(IDEN_Y_MEM);
 		case IDEN_Z:
 			return mem(IDEN_Z_MEM);
-		default:
-			printf("No such identifier: %d\n", iden);
-			perror("Error: No such identifier, unable to get memory address\n");
+		default: ;
+			char buf[CUSTOM_ERR_LEN] = {0};
+			sprintf(buf, "Error: No such identifier called %d, unable to get memory address\n", iden);
+			custom_err(buf);
 			return mem(IDEN_X_MEM);
 	}
 }
 
+ISA_Node *head = NULL, *tail = NULL;
+
+ISA get_isa(OPCODE opcode, Space rd, Space rs1, Space rs2){
+	ISA isa;
+	isa.opcode = opcode;
+	isa.rd = rd;
+	isa.rs1 = rs1;
+	isa.rs2 = rs2;
+	return isa;
+}
+
+void opcode2asm(char *buf, OPCODE opcode){
+	switch (opcode){
+	case OP_ADD:
+		strcpy(buf, "add");
+		return;
+	case OP_SUB:
+		strcpy(buf, "sub");
+		return;
+	case OP_MUL:
+		strcpy(buf, "mul");
+		return;
+	case OP_DIV:
+		strcpy(buf, "div");
+		return;
+	case OP_REM:
+		strcpy(buf, "rem");
+		return;
+	case OP_LOAD:
+		strcpy(buf, "load");
+		return;
+	case OP_STORE:
+		strcpy(buf, "store");
+		return;
+	default: ;
+		char buf[CUSTOM_ERR_LEN] = {0};
+		sprintf(buf, "Error: No such opcode called %d, unable to convert it to asm code\n", opcode);
+		custom_err(buf);
+		return;
+	}
+}
+
+void space2asm(char *space_buf, Space s){
+	if(s.type == REG_TYPE){
+		sprintf(space_buf, "r%d", s.reg.n);
+	}else if(s.type == MEM_TYPE){
+		sprintf(space_buf, "[%d]", s.mem.addr);
+	}else if(s.type == CONST_TYPE){
+		sprintf(space_buf, "%d", s.constant.c);
+	}else{
+		char buf[CUSTOM_ERR_LEN] = {0};
+		sprintf(buf, "Error: Invalid space type: %d, unable to convert it to asm code\n", s.type);
+		custom_err(buf);
+	}
+}
+
+void isa2asm(char *asm_buf, ISA isa){
+	char op_buf[OP_BUF_LEN] = {0};
+	opcode2asm(op_buf, isa.opcode);
+
+	if(isa.opcode == OP_LOAD){
+		if(isa.rd.type == REG_TYPE && isa.rs1.type == MEM_TYPE){
+			char rd_str[SPACE_BUF_LEN] = {0}, rs1_str[SPACE_BUF_LEN] = {0};
+			space2asm(rd_str, isa.rd);
+			space2asm(rs1_str, isa.rs1);
+
+			sprintf(asm_buf, "%s %s %s\n", op_buf, rd_str, rs1_str);
+		}else{
+			char buf[CUSTOM_ERR_LEN] = {0};
+			sprintf(buf, "Error: Invalid rd type: %d or rs type: %d for load, unable to convert it to asm code\n", isa.rd.type, isa.rs1.type);
+			custom_err(buf);
+		}
+	}else if(isa.opcode == OP_STORE){
+		if(isa.rd.type == MEM_TYPE && isa.rs1.type == REG_TYPE){
+			char rd_str[SPACE_BUF_LEN] = {0}, rs1_str[SPACE_BUF_LEN] = {0};
+			space2asm(rd_str, isa.rd);
+			space2asm(rs1_str, isa.rs1);
+
+			sprintf(asm_buf, "%s %s %s\n", op_buf, rd_str, rs1_str);
+		}else{
+			char buf[CUSTOM_ERR_LEN] = {0};
+			sprintf(buf, "Error: Invalid rd type: %d or rs type: %d for store, unable to convert it to asm code\n", isa.rd.type, isa.rs1.type);
+			custom_err(buf);
+		}
+	}else{
+		if(isa.rd.type == REG_TYPE && (isa.rs1.type == CONST_TYPE || isa.rs1.type == REG_TYPE) && (isa.rs2.type == CONST_TYPE || isa.rs2.type == REG_TYPE)){
+			char rd_str[SPACE_BUF_LEN] = {0}, rs1_str[SPACE_BUF_LEN] = {0}, rs2_str[SPACE_BUF_LEN] = {0};
+			space2asm(rd_str, isa.rd);
+			space2asm(rs1_str, isa.rs1);
+			space2asm(rs2_str, isa.rs2);
+			
+			sprintf(asm_buf, "%s %s %s %s\n", op_buf, rd_str, rs1_str, rs2_str);
+		}
+	}
+}
+
+void init_asm(){
+	if(head != NULL){
+		free(head);
+	}
+	head = (ISA_Node*)malloc(sizeof(ISA_Node));
+	head->next = head;
+	head->prev = head;
+	tail = head;
+}
+
+ISA_Node *insert_asm(ISA asm_code){
+	if(head == NULL){
+		init_asm();
+	}
+	ISA_Node *node = (ISA_Node*)malloc(sizeof(ISA_Node));
+	node->isa = asm_code;
+	node->prev = tail;
+	node->next = tail->next;
+	tail->next = node;
+	tail->next->prev = node;
+	tail = node;
+	return node;
+}
+
 void set_reg(Register reg, int val){
 	if(val >= 0){
-		printf("add r%d 0 %d\n", reg.n, val);
+		// printf("add r%d 0 %d\n", reg.n, val);
+		Constant c1 = {0}, c2 = {val};
+		ISA isa = {OP_ADD, reg2space(reg), const2space(c1), const2space(c2)};
+		
+		// c1.c = 0;
+		// c2.c = val;
+		// isa.opcode = OP_ADD;
+		// isa.rd = reg2space(reg);
+		// isa.rs1 = const2space(c1);
+		// isa.rs2 = const2space(c2);
+		
+		char asm_buf[ASM_BUF_LEN] = {0};
+		isa2asm(asm_buf, isa);
+		printf("%s", asm_buf);
 	}else{
-		printf("sub r%d 0 %d\n", reg.n, -val);
+		// printf("sub r%d 0 %d\n", reg.n, -val);
+		Constant c1 = {0}, c2 = {-val};
+		ISA isa = {OP_SUB, reg2space(reg), const2space(c1), const2space(c2)};
+		// ISA isa;
+		// Constant c1, c2;
+		// c1.c = 0;
+		// c2.c = val;
+		// isa.opcode = OP_SUB;
+		// isa.rd = reg2space(reg);
+		// isa.rs1 = const2space(c1);
+		// isa.rs2 = const2space(c2);
+		
+		char asm_buf[ASM_BUF_LEN] = {0};
+		isa2asm(asm_buf, isa);
+		printf("%s", asm_buf);
 	}
 }
 
 ISA asm_store(Memory mem, Register reg){
-	printf("store [%d] r%d\n", mem.addr, reg.n);
-	ISA asm_code;
-	asm_code.opcode = OP_STORE;
-	asm_code.rd = mem2space(mem);
-	asm_code.rs1 = reg2space(reg);
-	return asm_code;
+	// printf("store [%d] r%d\n", mem.addr, reg.n);
+	ISA isa;
+	isa.opcode = OP_STORE;
+	isa.rd = mem2space(mem);
+	isa.rs1 = reg2space(reg);
+
+	char asm_buf[ASM_BUF_LEN] = {0};
+	isa2asm(asm_buf, isa);
+	printf("%s", asm_buf);
+	return isa;
 }
 
 ISA asm_load(Register reg, Memory mem){
-	printf("load r%d [%d]\n", reg.n, mem.addr);
-	ISA asm_code;
-	asm_code.opcode = OP_LOAD;
-	asm_code.rd = reg2space(reg);
-	asm_code.rs1 = mem2space(mem);
-	return asm_code;
+	// printf("load r%d [%d]\n", reg.n, mem.addr);
+	ISA isa;
+	isa.opcode = OP_LOAD;
+	isa.rd = reg2space(reg);
+	isa.rs1 = mem2space(mem);
+
+	char asm_buf[ASM_BUF_LEN] = {0};
+	isa2asm(asm_buf, isa);
+	printf("%s", asm_buf);
+	return isa;
 }
 
 ISA asm_arithmetic(OPCODE opcode, Register rd, Space s1, Space s2){
-	char *asm_op;
-	switch (opcode){
-		case OP_ADD:
-			asm_op = "add";
-			break;
-		case OP_SUB:
-			asm_op = "sub";
-			break;
-		case OP_MUL:
-			asm_op = "mul";
-			break;
-		case OP_DIV:
-			asm_op = "div";
-			break;
-		case OP_REM:
-			asm_op = "rem";
-			break;
-		default:
-			break;
-	}
-	char s1_str[10] = {0}, s2_str[10] = {0};
-	if(s1.type == REG_TYPE){
-		sprintf(s1_str, "r%d", s1.reg.n);
-	}else if(s1.type == CONST_TYPE){
-		sprintf(s1_str, "%d", s1.constant.c);
-	}else{
-		printf("s1 type error: %d\n", s1.type);
-		perror("Error: s1 isn't a valid type\n");
-	}
+	ISA isa = {opcode, reg2space(rd), s1, s2};
+	// isa.opcode = opcode;
+	// isa.rd = reg2space(rd);
+	// isa.rs1 = s1;
+	// isa.rs2 = s2;
 
-	if(s2.type == REG_TYPE){
-		sprintf(s2_str, "r%d", s2.reg.n);
-	}else if(s2.type == CONST_TYPE){
-		sprintf(s2_str, "%d", s2.constant.c);
-	}else{
-		printf("s2 type error: %d\n", s2.type);
-		perror("Error: s2 isn't a valid type\n");
-	}
-
-	printf("%s r%d %s %s\n", asm_op, rd.n, s1_str, s2_str);
-	ISA asm_code;
-	asm_code.opcode = opcode;
-	asm_code.rd = reg2space(rd);
-	asm_code.rs1 = s1;
-	asm_code.rs2 = s2;
-	return asm_code;
+	char asm_buf[ASM_BUF_LEN] = {0};
+	isa2asm(asm_buf, isa);
+	printf("%s", asm_buf);
+	return isa;
 }
 
 void push(Register reg, int *stack_ptr){
@@ -669,8 +803,9 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 	}else if(root->kind == END){
 		return;	
 	}else{
-		printf("root->kind type error: %d\n", root->kind);
-		perror("No such symbol\n");
+		char buf[CUSTOM_ERR_LEN] = {0};
+		sprintf(buf, "Error: No such symbol, root->kind type error: %d\n", root->kind);
+		custom_err(buf);
 		return;
 	}
 }
@@ -681,6 +816,7 @@ void codegen(AST *root) {
 	if(root == NULL){
 		return;
 	}
+	
 	AST *next_l = root->lhs, *next_r = root->rhs;
 	int stack_ptr = mem_addr(3);
 
