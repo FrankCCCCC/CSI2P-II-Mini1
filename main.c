@@ -38,7 +38,7 @@ typedef struct ASTUnit {
 	exit(0);\
 }
 // You may set DEBUG=1 to debug. Remember setting back to 0 before submit.
-#define DEBUG 1
+#define DEBUG 0
 // Split the input char array into token linked list.
 Token *lexer(const char *in);
 // Create a new token.
@@ -322,7 +322,7 @@ void semantic_check(AST *now) {
 	// hint: Semantic of each node needs to be checked recursively (from the current node to lhs/mid/rhs node).
 	if (now->kind == PREINC || now->kind == PREDEC) {
 		AST *tmp = now->mid;
-		while (tmp->kind == RPAR) tmp = tmp->mid;
+		while (tmp->kind == LPAR) tmp = tmp->mid;
 		if (tmp->kind != IDENTIFIER)
 			err("Rvalue is required as rigth operand of pre-increment.");
 	}
@@ -406,6 +406,24 @@ Space const2space(Constant c){
 	return sp;
 }
 
+int get_stack_ptr_inc(int stack_ptr){
+	return stack_ptr + 4;
+}
+
+int get_stack_ptr_dec(int stack_ptr){
+	return stack_ptr - 4;
+}
+
+int stack_ptr_inc(int *stack_ptr){
+	*stack_ptr = get_stack_ptr_inc(*stack_ptr);
+	return *stack_ptr;
+}
+
+int stack_ptr_dec(int *stack_ptr){
+	*stack_ptr = get_stack_ptr_dec(*stack_ptr);
+	return *stack_ptr;
+}
+
 typedef enum{
 	ASSIGN_MODE, COMPUTE_MODE
 }CODE_GEN_MODE;
@@ -439,7 +457,7 @@ Register iden2reg(int iden){
 		case IDEN_Z:
 			return reg(IDEN_Z_REG);
 		default:
-			printf("No such: %d\n", iden);
+			printf("No such identifier: %d\n", iden);
 			perror("Error: No such identifier, unable to get register\n");
 			return reg(IDEN_X_REG);
 	}
@@ -454,7 +472,7 @@ Memory iden2mem(int iden){
 		case IDEN_Z:
 			return mem(IDEN_Z_MEM);
 		default:
-			printf("No such: %d\n", iden);
+			printf("No such identifier: %d\n", iden);
 			perror("Error: No such identifier, unable to get memory address\n");
 			return mem(IDEN_X_MEM);
 	}
@@ -537,17 +555,20 @@ ISA asm_arithmetic(OPCODE opcode, Register rd, Space s1, Space s2){
 
 void push(Register reg, int *stack_ptr){
 	asm_store(mem(*stack_ptr), reg);
-	(*stack_ptr)+=4;
+	// (*stack_ptr)+=4;
+	stack_ptr_inc(stack_ptr);
 }
 
 void pop(Register reg, int *stack_ptr){
-	(*stack_ptr)-=4;
+	// (*stack_ptr)-=4;
+	stack_ptr_dec(stack_ptr);
 	asm_load(reg, mem(*stack_ptr));
 }
 
 void assign(int iden, int *stack_ptr){
 	Register target_reg = iden2reg(iden);
-	asm_load(target_reg, mem((*stack_ptr) - 4));
+	// asm_load(target_reg, mem((*stack_ptr) - 4));
+	asm_load(target_reg, mem(get_stack_ptr_dec(*stack_ptr)));
 }
 
 void arithmetic(OPCODE opcode, int *stack_ptr){
@@ -556,6 +577,29 @@ void arithmetic(OPCODE opcode, int *stack_ptr){
 
 	asm_arithmetic(opcode, reg(RSV_RD_REG), reg2space(reg(RSV_RS1_REG)), reg2space(reg(RSV_RS2_REG)));
 	push(reg(RSV_RD_REG), stack_ptr);
+}
+
+void inc_dec(AST *root, int *stack_ptr, int is_sub, int is_post){
+	AST *tmp = root->mid;
+	while (tmp->kind != IDENTIFIER) tmp = tmp->mid;
+
+	Constant c1;
+	c1.c = 1;
+	Register target_reg = iden2reg(tmp->val);
+	OPCODE opcode = OP_ADD; 
+
+	if(is_sub){
+		opcode = OP_SUB;
+	}
+	if(is_post){
+		// Postfix Increment/Decrement
+		push(target_reg, stack_ptr);
+		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+	}else{
+		// Prefix Increment/Decrement
+		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+		push(target_reg, stack_ptr);
+	}
 }
 
 void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
@@ -572,7 +616,10 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 	generate_code(next_l, stack_ptr, next_mode);
 
 	if(root->kind == ASSIGN){
-		assign(root->lhs->val, stack_ptr);
+		AST *tmp = root->lhs;
+		while (tmp->kind == LPAR) tmp = tmp->mid;
+
+		assign(tmp->val, stack_ptr);
 	}else if(root->kind == ADD){
 		arithmetic(OP_ADD, stack_ptr);
 	}else if(root->kind == SUB){
@@ -584,29 +631,13 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 	}else if(root->kind == REM){
 		arithmetic(OP_REM, stack_ptr);
 	}else if(root->kind == PREINC){
-		Constant c1;
-		c1.c = 1;
-		Register target_reg = iden2reg(root->mid->val);
-		asm_arithmetic(OP_ADD, target_reg, reg2space(target_reg), const2space(c1));
-		push(target_reg, stack_ptr);
+		inc_dec(root, stack_ptr, 0, 0);
 	}else if(root->kind == PREDEC){
-		Constant c1;
-		c1.c = 1;
-		Register target_reg = iden2reg(root->mid->val);
-		asm_arithmetic(OP_SUB, target_reg, reg2space(target_reg), const2space(c1));
-		push(target_reg, stack_ptr);
+		inc_dec(root, stack_ptr, 1, 0);
 	}else if(root->kind == POSTINC){
-		Constant c1;
-		c1.c = 1;
-		Register target_reg = iden2reg(root->mid->val);
-		push(target_reg, stack_ptr);
-		asm_arithmetic(OP_ADD, target_reg, reg2space(target_reg), const2space(c1));
+		inc_dec(root, stack_ptr, 0, 1);
 	}else if(root->kind == POSTDEC){
-		Constant c1;
-		c1.c = 1;
-		Register target_reg = iden2reg(root->mid->val);
-		push(target_reg, stack_ptr);
-		asm_arithmetic(OP_SUB, target_reg, reg2space(target_reg), const2space(c1));
+		inc_dec(root, stack_ptr, 1, 1);
 	}else if(root->kind == IDENTIFIER){
 		if(mode == COMPUTE_MODE)
 			push(iden2reg(root->val), stack_ptr);
@@ -616,13 +647,15 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 		push(reg(RSV_RD_REG), stack_ptr);
 		return;
 	}else if(root->kind == LPAR){
-		generate_code(root->mid, stack_ptr, COMPUTE_MODE);
+		generate_code(root->mid, stack_ptr, mode);
 	}else if(root->kind == RPAR){
-		generate_code(root->mid, stack_ptr, COMPUTE_MODE);
+		generate_code(root->mid, stack_ptr, mode);
 	}else if(root->kind == PLUS){
 		generate_code(root->mid, stack_ptr, COMPUTE_MODE);
 	}else if(root->kind == MINUS){
+		// Traverse down
 		generate_code(root->mid, stack_ptr, COMPUTE_MODE);
+		
 		Constant c1;
 		c1.c = 0;
 		Register target_reg = reg(RSV_RD_REG), src_reg = reg(RSV_RS2_REG);
@@ -636,6 +669,8 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 	}else if(root->kind == END){
 		return;	
 	}else{
+		printf("root->kind type error: %d\n", root->kind);
+		perror("No such symbol\n");
 		return;
 	}
 }
