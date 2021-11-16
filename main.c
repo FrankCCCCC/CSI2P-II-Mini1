@@ -454,6 +454,9 @@ typedef enum{
 #define IDEN_X_REG 3
 #define IDEN_Y_REG 4
 #define IDEN_Z_REG 5
+#define IDEN_X_REG_W 6
+#define IDEN_Y_REG_W 7
+#define IDEN_Z_REG_W 8
 #define IDEN_X 'x'
 #define IDEN_Y 'y'
 #define IDEN_Z 'z'
@@ -474,6 +477,38 @@ Register iden2reg(int iden){
 			sprintf(buf, "Error: No such identifier called %d, unable to get register\n", iden);
 			custom_err(buf);
 			return reg(IDEN_X_REG);
+	}
+}
+
+Register iden2reg_r(int iden){
+	switch (iden){
+		case IDEN_X:
+			return reg(IDEN_X_REG);
+		case IDEN_Y:
+			return reg(IDEN_Y_REG);
+		case IDEN_Z:
+			return reg(IDEN_Z_REG);
+		default: ;
+			char buf[CUSTOM_ERR_LEN] = {0};
+			sprintf(buf, "Error: No such identifier called %d, unable to get register\n", iden);
+			custom_err(buf);
+			return reg(IDEN_X_REG);
+	}
+}
+
+Register iden2reg_w(int iden){
+	switch (iden){
+		case IDEN_X:
+			return reg(IDEN_X_REG_W);
+		case IDEN_Y:
+			return reg(IDEN_Y_REG_W);
+		case IDEN_Z:
+			return reg(IDEN_Z_REG_W);
+		default: ;
+			char buf[CUSTOM_ERR_LEN] = {0};
+			sprintf(buf, "Error: No such identifier called %d, unable to get register\n", iden);
+			custom_err(buf);
+			return reg(IDEN_X_REG_W);
 	}
 }
 
@@ -700,26 +735,68 @@ void pop(Register reg, int *stack_ptr){
 }
 
 void assign(int iden, int *stack_ptr){
+	// Register target_reg = iden2reg_w(iden);
 	Register target_reg = iden2reg(iden);
-	// asm_load(target_reg, mem((*stack_ptr) - 4));
 	asm_load(target_reg, mem(get_stack_ptr_dec(*stack_ptr)));
 }
 
+// void assign_sp(int iden, int *stack_ptr){
+// 	Register target_reg = iden2reg_w(iden);
+// 	// asm_load(target_reg, mem((*stack_ptr) - 4));
+// 	asm_load(target_reg, mem(get_stack_ptr_dec(*stack_ptr)));
+// }
+
 void arithmetic(OPCODE opcode, int *stack_ptr){
-	pop(reg(RSV_RS1_REG), stack_ptr);
 	pop(reg(RSV_RS2_REG), stack_ptr);
+	pop(reg(RSV_RS1_REG), stack_ptr);
 
 	asm_arithmetic(opcode, reg(RSV_RD_REG), reg2space(reg(RSV_RS1_REG)), reg2space(reg(RSV_RS2_REG)));
 	push(reg(RSV_RD_REG), stack_ptr);
 }
 
+// int is_bottom_pre(AST *root){
+// 	AST *temp = root;
+// 	while(temp->kind != PREDEC && temp->kind != PREINC){
+// 		if(temp->mid == NULL){
+// 			temp = NULL;
+// 			break;
+// 		}else{
+// 			temp = temp->mid;
+// 		}
+// 	}
+// 	return temp;
+// }
+
+// void arithmetic_sp(OPCODE opcode, int *stack_ptr, AST *root){
+// 	Register rs1 = reg(RSV_RS1_REG), rs2 = reg(RSV_RS2_REG);
+// 	AST *rhs_bottom = root->rhs, *lhs_bottom = root->lhs;
+// 	rhs_bottom = is_bottom_pre(rhs_bottom);
+// 	lhs_bottom = is_bottom_pre(lhs_bottom);
+
+// 	if(rhs_bottom != NULL){
+// 		rs2 = iden2reg_r(rhs_bottom->mid->val);
+// 	}else{
+// 		pop(rs2, stack_ptr);
+// 	}
+// 	if(lhs_bottom != NULL){
+// 		rs1 = iden2reg_r(lhs_bottom->mid->val);
+// 	}else{
+// 		pop(rs1, stack_ptr);
+// 	}
+
+// 	asm_arithmetic(opcode, reg(RSV_RD_REG), reg2space(rs1), reg2space(rs2));
+// 	push(reg(RSV_RD_REG), stack_ptr);
+// }
+
 void inc_dec(AST *root, int *stack_ptr, int is_sub, int is_post){
 	AST *tmp = root->mid;
 	while (tmp->kind != IDENTIFIER) tmp = tmp->mid;
 
-	Constant c1;
+	Constant c0, c1;
+	c0.c = 0;
 	c1.c = 1;
 	Register target_reg = iden2reg(tmp->val);
+	// Register target_reg = iden2reg_w(tmp->val), source_reg = iden2reg_r(tmp->val), temp_reg = reg(RSV_RD_REG);
 	OPCODE opcode = OP_ADD; 
 
 	if(is_sub){
@@ -729,25 +806,72 @@ void inc_dec(AST *root, int *stack_ptr, int is_sub, int is_post){
 		// Postfix Increment/Decrement
 		push(target_reg, stack_ptr);
 		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+
+		// push(source_reg, stack_ptr);
+		// asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+		// asm_arithmetic(OP_ADD, source_reg, reg2space(target_reg), const2space(c0));
 	}else{
 		// Prefix Increment/Decrement
 		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
 		push(target_reg, stack_ptr);
+
+		// asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+		// asm_arithmetic(opcode, temp_reg, reg2space(source_reg), const2space(c1));
+		// push(temp_reg, stack_ptr);
 	}
 }
+
+// void inc_dec_sp(AST *root, int *stack_ptr, int is_sub, int is_post){
+// 	AST *tmp = root->mid;
+// 	while (tmp->kind != IDENTIFIER) tmp = tmp->mid;
+
+// 	Constant c0, c1;
+// 	c0.c = 0;
+// 	c1.c = 1;
+// 	// Register target_reg = iden2reg(tmp->val);
+// 	Register target_reg = iden2reg_w(tmp->val), source_reg = iden2reg_r(tmp->val), temp_reg = reg(RSV_RD_REG);
+// 	OPCODE opcode = OP_ADD; 
+
+// 	if(is_sub){
+// 		opcode = OP_SUB;
+// 	}
+// 	if(is_post){
+// 		// Postfix Increment/Decrement
+// 		// push(target_reg, stack_ptr);
+// 		// asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+
+// 		push(source_reg, stack_ptr);
+// 		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+// 		asm_arithmetic(OP_ADD, source_reg, reg2space(target_reg), const2space(c0));
+// 	}else{
+// 		// Prefix Increment/Decrement
+// 		// asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+// 		// push(target_reg, stack_ptr);
+
+// 		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+// 		asm_arithmetic(opcode, temp_reg, reg2space(source_reg), const2space(c1));
+// 		push(temp_reg, stack_ptr);
+// 	}
+// }
 
 void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 	if(root == NULL){
 		return;
 	}
 	AST *next_l = root->lhs, *next_r = root->rhs;
-	generate_code(next_r, stack_ptr, COMPUTE_MODE);
+	
 	
 	CODE_GEN_MODE next_mode = COMPUTE_MODE;
 	if(root->kind == ASSIGN){
+		// If assining, right to left
 		next_mode = ASSIGN_MODE;	
+		generate_code(next_r, stack_ptr, COMPUTE_MODE);
+		generate_code(next_l, stack_ptr, next_mode);
+	}else{
+		// If computing, left to right
+		generate_code(next_l, stack_ptr, COMPUTE_MODE);
+		generate_code(next_r, stack_ptr, COMPUTE_MODE);
 	}
-	generate_code(next_l, stack_ptr, next_mode);
 
 	if(root->kind == ASSIGN){
 		AST *tmp = root->lhs;
@@ -774,7 +898,8 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 		inc_dec(root, stack_ptr, 1, 1);
 	}else if(root->kind == IDENTIFIER){
 		if(mode == COMPUTE_MODE)
-			push(iden2reg(root->val), stack_ptr);
+		push(iden2reg(root->val), stack_ptr);
+			// push(iden2reg_r(root->val), stack_ptr);
 		return;
 	}else if(root->kind == CONSTANT){
 		set_reg(reg(RSV_RD_REG), root->val);
@@ -824,6 +949,15 @@ void codegen(AST *root) {
 	asm_load(iden2reg(IDEN_X), iden2mem(IDEN_X));
 	asm_load(iden2reg(IDEN_Y), iden2mem(IDEN_Y));
 	asm_load(iden2reg(IDEN_Z), iden2mem(IDEN_Z));
+	
+	// Registers for reading
+	// asm_load(iden2reg_r(IDEN_X), iden2mem(IDEN_X));
+	// asm_load(iden2reg_r(IDEN_Y), iden2mem(IDEN_Y));
+	// asm_load(iden2reg_r(IDEN_Z), iden2mem(IDEN_Z));
+	// Registers for writing
+	// asm_load(iden2reg_w(IDEN_X), iden2mem(IDEN_X));
+	// asm_load(iden2reg_w(IDEN_Y), iden2mem(IDEN_Y));
+	// asm_load(iden2reg_w(IDEN_Z), iden2mem(IDEN_Z));
 
 	generate_code(root, &stack_ptr, COMPUTE_MODE);
 
@@ -831,6 +965,11 @@ void codegen(AST *root) {
 	asm_store(iden2mem(IDEN_X), iden2reg(IDEN_X));
 	asm_store(iden2mem(IDEN_Y), iden2reg(IDEN_Y));
 	asm_store(iden2mem(IDEN_Z), iden2reg(IDEN_Z));
+
+	// Registers for writing
+	// asm_store(iden2mem(IDEN_X), iden2reg_w(IDEN_X));
+	// asm_store(iden2mem(IDEN_Y), iden2reg_w(IDEN_Y));
+	// asm_store(iden2mem(IDEN_Z), iden2reg_w(IDEN_Z));
 }
 
 void freeAST(AST *now) {
