@@ -740,11 +740,48 @@ void assign(int iden, int *stack_ptr){
 	asm_load(target_reg, mem(get_stack_ptr_dec(*stack_ptr)));
 }
 
-// void assign_sp(int iden, int *stack_ptr){
-// 	Register target_reg = iden2reg_w(iden);
-// 	// asm_load(target_reg, mem((*stack_ptr) - 4));
-// 	asm_load(target_reg, mem(get_stack_ptr_dec(*stack_ptr)));
-// }
+AST* is_bottom_pre(AST *root){
+	if(root == NULL) return NULL;
+
+	AST *temp = root;
+	while(temp->kind != PREDEC && temp->kind != PREINC){
+		if(temp->mid == NULL){
+			temp = NULL;
+			break;
+		}else{
+			temp = temp->mid;
+		}
+	}
+	return temp;
+}
+
+void arithmetic_sp(AST *root, OPCODE opcode, int *stack_ptr){
+	AST *lhs_pre = is_bottom_pre(root->lhs), *rhs_pre = is_bottom_pre(root->rhs);
+	if(lhs_pre == NULL && rhs_pre == NULL){
+		pop(reg(RSV_RS2_REG), stack_ptr);
+		pop(reg(RSV_RS1_REG), stack_ptr);
+
+		asm_arithmetic(opcode, reg(RSV_RD_REG), reg2space(reg(RSV_RS1_REG)), reg2space(reg(RSV_RS2_REG)));
+		push(reg(RSV_RD_REG), stack_ptr);
+	}else{
+		Register rs1, rs2;
+		if(rhs_pre != NULL){
+			rs2 = iden2reg(rhs_pre->mid->val);
+		}else{
+			rs2 = reg(RSV_RS2_REG);
+			pop(rs2, stack_ptr);
+		}
+
+		if(lhs_pre != NULL){
+			rs1 = iden2reg(lhs_pre->mid->val);
+		}else{
+			rs1 = reg(RSV_RS1_REG);
+			pop(rs1, stack_ptr);
+		}
+		asm_arithmetic(opcode, reg(RSV_RD_REG), reg2space(rs1), reg2space(rs2));
+		push(reg(RSV_RD_REG), stack_ptr);
+	}
+}
 
 void arithmetic(OPCODE opcode, int *stack_ptr){
 	pop(reg(RSV_RS2_REG), stack_ptr);
@@ -753,40 +790,6 @@ void arithmetic(OPCODE opcode, int *stack_ptr){
 	asm_arithmetic(opcode, reg(RSV_RD_REG), reg2space(reg(RSV_RS1_REG)), reg2space(reg(RSV_RS2_REG)));
 	push(reg(RSV_RD_REG), stack_ptr);
 }
-
-// int is_bottom_pre(AST *root){
-// 	AST *temp = root;
-// 	while(temp->kind != PREDEC && temp->kind != PREINC){
-// 		if(temp->mid == NULL){
-// 			temp = NULL;
-// 			break;
-// 		}else{
-// 			temp = temp->mid;
-// 		}
-// 	}
-// 	return temp;
-// }
-
-// void arithmetic_sp(OPCODE opcode, int *stack_ptr, AST *root){
-// 	Register rs1 = reg(RSV_RS1_REG), rs2 = reg(RSV_RS2_REG);
-// 	AST *rhs_bottom = root->rhs, *lhs_bottom = root->lhs;
-// 	rhs_bottom = is_bottom_pre(rhs_bottom);
-// 	lhs_bottom = is_bottom_pre(lhs_bottom);
-
-// 	if(rhs_bottom != NULL){
-// 		rs2 = iden2reg_r(rhs_bottom->mid->val);
-// 	}else{
-// 		pop(rs2, stack_ptr);
-// 	}
-// 	if(lhs_bottom != NULL){
-// 		rs1 = iden2reg_r(lhs_bottom->mid->val);
-// 	}else{
-// 		pop(rs1, stack_ptr);
-// 	}
-
-// 	asm_arithmetic(opcode, reg(RSV_RD_REG), reg2space(rs1), reg2space(rs2));
-// 	push(reg(RSV_RD_REG), stack_ptr);
-// }
 
 void inc_dec(AST *root, int *stack_ptr, int is_sub, int is_post){
 	AST *tmp = root->mid;
@@ -821,38 +824,28 @@ void inc_dec(AST *root, int *stack_ptr, int is_sub, int is_post){
 	}
 }
 
-// void inc_dec_sp(AST *root, int *stack_ptr, int is_sub, int is_post){
-// 	AST *tmp = root->mid;
-// 	while (tmp->kind != IDENTIFIER) tmp = tmp->mid;
+void inc_dec_sp(AST *root, int *stack_ptr, int is_sub, int is_post){
+	AST *tmp = root->mid;
+	while (tmp->kind != IDENTIFIER) tmp = tmp->mid;
 
-// 	Constant c0, c1;
-// 	c0.c = 0;
-// 	c1.c = 1;
-// 	// Register target_reg = iden2reg(tmp->val);
-// 	Register target_reg = iden2reg_w(tmp->val), source_reg = iden2reg_r(tmp->val), temp_reg = reg(RSV_RD_REG);
-// 	OPCODE opcode = OP_ADD; 
+	Constant c0, c1;
+	c0.c = 0;
+	c1.c = 1;
+	Register target_reg = iden2reg(tmp->val);
+	OPCODE opcode = OP_ADD; 
 
-// 	if(is_sub){
-// 		opcode = OP_SUB;
-// 	}
-// 	if(is_post){
-// 		// Postfix Increment/Decrement
-// 		// push(target_reg, stack_ptr);
-// 		// asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
-
-// 		push(source_reg, stack_ptr);
-// 		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
-// 		asm_arithmetic(OP_ADD, source_reg, reg2space(target_reg), const2space(c0));
-// 	}else{
-// 		// Prefix Increment/Decrement
-// 		// asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
-// 		// push(target_reg, stack_ptr);
-
-// 		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
-// 		asm_arithmetic(opcode, temp_reg, reg2space(source_reg), const2space(c1));
-// 		push(temp_reg, stack_ptr);
-// 	}
-// }
+	if(is_sub){
+		opcode = OP_SUB;
+	}
+	if(is_post){
+		// Postfix Increment/Decrement
+		push(target_reg, stack_ptr);
+		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+	}else{
+		// Prefix Increment/Decrement
+		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+	}
+}
 
 void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 	if(root == NULL){
@@ -879,23 +872,32 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 
 		assign(tmp->val, stack_ptr);
 	}else if(root->kind == ADD){
-		arithmetic(OP_ADD, stack_ptr);
+		// arithmetic(OP_ADD, stack_ptr);
+		arithmetic_sp(root, OP_ADD, stack_ptr);
 	}else if(root->kind == SUB){
-		arithmetic(OP_SUB, stack_ptr);
+		// arithmetic(OP_SUB, stack_ptr);
+		arithmetic_sp(root, OP_SUB, stack_ptr);
 	}else if(root->kind == MUL){
-		arithmetic(OP_MUL, stack_ptr);
+		// arithmetic(OP_MUL, stack_ptr);
+		arithmetic_sp(root, OP_MUL, stack_ptr);
 	}else if(root->kind == DIV){
-		arithmetic(OP_DIV, stack_ptr);
+		// arithmetic(OP_DIV, stack_ptr);
+		arithmetic_sp(root, OP_DIV, stack_ptr);
 	}else if(root->kind == REM){
-		arithmetic(OP_REM, stack_ptr);
+		// arithmetic(OP_REM, stack_ptr);
+		arithmetic_sp(root, OP_REM, stack_ptr);
 	}else if(root->kind == PREINC){
-		inc_dec(root, stack_ptr, 0, 0);
+		// inc_dec(root, stack_ptr, 0, 0);
+		inc_dec_sp(root, stack_ptr, 0, 0);
 	}else if(root->kind == PREDEC){
-		inc_dec(root, stack_ptr, 1, 0);
+		// inc_dec(root, stack_ptr, 1, 0);
+		inc_dec_sp(root, stack_ptr, 1, 0);
 	}else if(root->kind == POSTINC){
-		inc_dec(root, stack_ptr, 0, 1);
+		// inc_dec(root, stack_ptr, 0, 1);
+		inc_dec_sp(root, stack_ptr, 0, 1);
 	}else if(root->kind == POSTDEC){
-		inc_dec(root, stack_ptr, 1, 1);
+		// inc_dec(root, stack_ptr, 1, 1);
+		inc_dec_sp(root, stack_ptr, 1, 1);
 	}else if(root->kind == IDENTIFIER){
 		if(mode == COMPUTE_MODE)
 		push(iden2reg(root->val), stack_ptr);
