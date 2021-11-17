@@ -13,6 +13,7 @@ if __name__ == '__main__':
     sol_gcc_cmd = f'gcc -std=c11 -o {sol_exe} {os.path.join(sols_dir, eval_c)}'
 
     # Main.c
+    # main_c = 'optimized.c'
     main_c = 'main.c'
     main_exe = 'main'
     main_output = 'out.txt'
