@@ -39,6 +39,7 @@ typedef struct ASTUnit {
 }
 // You may set DEBUG=1 to debug. Remember setting back to 0 before submit.
 #define DEBUG 0
+#define IS_PRINT_ASM 0
 // Split the input char array into token linked list.
 Token *lexer(const char *in);
 // Create a new token.
@@ -75,9 +76,85 @@ void token_print(Token *in, size_t len);
 // Print AST tree.
 void AST_print(AST *head);
 
+#define CUSTOM_ERR_LEN 1000
+#define OP_BUF_LEN 10
+#define SPACE_BUF_LEN 10
+#define ASM_BUF_LEN 100
+
+#define IDEN_X 'x'
+#define IDEN_Y 'y'
+#define IDEN_Z 'z'
+
+#define RSV_RD_REG 0
+#define RSV_RS1_REG 1
+#define RSV_RS2_REG 2
+#define IDEN_X_REG 3
+#define IDEN_Y_REG 4
+#define IDEN_Z_REG 5
+#define IDEN_X_REG_W 6
+#define IDEN_Y_REG_W 7
+#define IDEN_Z_REG_W 8
+#define IDEN_X_MEM 0
+#define IDEN_Y_MEM 4
+#define IDEN_Z_MEM 8
+
+typedef enum {
+	OP_LOAD, OP_STORE, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_REM
+} OPCODE;
+
+typedef enum{
+	REG_TYPE, CONST_TYPE, MEM_TYPE
+}SPACE_TYPE;
+
+typedef struct{
+	int addr;
+}Memory;
+
+typedef struct{
+	int n;
+}Register;
+
+typedef struct{
+	int c;
+}Constant;
+
+typedef struct space{
+	SPACE_TYPE type;
+	Register reg;
+	Memory mem;
+	Constant constant;
+} Space;
+
+typedef struct isa{
+	OPCODE opcode;
+	Space rd, rs1, rs2;
+}ISA;
+
+typedef struct isa_node{
+	ISA isa;
+	struct isa_node *prev, *next;
+	char asm_code[ASM_BUF_LEN];
+}ISA_Node;
+
+Register iden2reg(int iden);
+Memory iden2mem(int iden);
+ISA isa_load(Register reg, Memory mem);
+ISA isa_store(Memory mem, Register reg);
+
+// Handling assembly codes
+void init_asm();
+ISA_Node *insert_asm(ISA isa, int is_print);
+void print_isa(ISA isa, char *buff);
+void show_asm();
+
 char input[MAX_LENGTH];
 
 int main() {
+	// Load to register
+	isa_load(iden2reg(IDEN_X), iden2mem(IDEN_X));
+	isa_load(iden2reg(IDEN_Y), iden2mem(IDEN_Y));
+	isa_load(iden2reg(IDEN_Z), iden2mem(IDEN_Z));
+
 	while (fgets(input, MAX_LENGTH, stdin) != NULL) {
 		Token *content = lexer(input);
 		size_t len = token_list_to_arr(&content);
@@ -94,6 +171,16 @@ int main() {
 		free(content);
 		freeAST(ast_root);
 	}
+
+	// Store back to memory
+	isa_store(iden2mem(IDEN_X), iden2reg(IDEN_X));
+	isa_store(iden2mem(IDEN_Y), iden2reg(IDEN_Y));
+	isa_store(iden2mem(IDEN_Z), iden2reg(IDEN_Z));
+
+	if(!IS_PRINT_ASM){
+		show_asm();
+	}
+
 	return 0;
 }
 
@@ -338,47 +425,10 @@ void semantic_check(AST *now) {
 }
 
 void custom_err(char *str){
-	char msg[1000] = {0};
+	char msg[CUSTOM_ERR_LEN] = {0};
 	sprintf(msg, "%s\n", str);
 	perror(msg);	
 }
-
-typedef enum {
-	OP_LOAD, OP_STORE, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_REM
-} OPCODE;
-
-typedef enum{
-	REG_TYPE, CONST_TYPE, MEM_TYPE
-}SPACE_TYPE;
-
-typedef struct{
-	int addr;
-}Memory;
-
-typedef struct{
-	int n;
-}Register;
-
-typedef struct{
-	int c;
-}Constant;
-
-typedef struct space{
-	SPACE_TYPE type;
-	Register reg;
-	Memory mem;
-	Constant constant;
-} Space;
-
-typedef struct isa{
-	OPCODE opcode;
-	Space rd, rs1, rs2;
-}ISA;
-
-typedef struct isa_node{
-	ISA isa;
-	struct isa_node *prev, *next;
-}ISA_Node;
 
 int mem_addr(int n){
 	return n * 4;
@@ -417,6 +467,10 @@ Space const2space(Constant c){
 	return sp;
 }
 
+int get_stack_ptr(int stack_ptr){
+	return stack_ptr;
+}
+
 int get_stack_ptr_inc(int stack_ptr){
 	return stack_ptr + 4;
 }
@@ -443,27 +497,6 @@ typedef enum{
 	VAR_X, VAR_Y, VAR_Z
 }VAR;
 
-#define CUSTOM_ERR_LEN 100
-#define OP_BUF_LEN 10
-#define SPACE_BUF_LEN 10
-#define ASM_BUF_LEN 100
-
-#define RSV_RD_REG 0
-#define RSV_RS1_REG 1
-#define RSV_RS2_REG 2
-#define IDEN_X_REG 3
-#define IDEN_Y_REG 4
-#define IDEN_Z_REG 5
-#define IDEN_X_REG_W 6
-#define IDEN_Y_REG_W 7
-#define IDEN_Z_REG_W 8
-#define IDEN_X 'x'
-#define IDEN_Y 'y'
-#define IDEN_Z 'z'
-#define IDEN_X_MEM 0
-#define IDEN_Y_MEM 4
-#define IDEN_Z_MEM 8
-
 Register iden2reg(int iden){
 	switch (iden){
 		case IDEN_X:
@@ -480,37 +513,37 @@ Register iden2reg(int iden){
 	}
 }
 
-Register iden2reg_r(int iden){
-	switch (iden){
-		case IDEN_X:
-			return reg(IDEN_X_REG);
-		case IDEN_Y:
-			return reg(IDEN_Y_REG);
-		case IDEN_Z:
-			return reg(IDEN_Z_REG);
-		default: ;
-			char buf[CUSTOM_ERR_LEN] = {0};
-			sprintf(buf, "Error: No such identifier called %d, unable to get register\n", iden);
-			custom_err(buf);
-			return reg(IDEN_X_REG);
-	}
-}
+// Register iden2reg_r(int iden){
+// 	switch (iden){
+// 		case IDEN_X:
+// 			return reg(IDEN_X_REG);
+// 		case IDEN_Y:
+// 			return reg(IDEN_Y_REG);
+// 		case IDEN_Z:
+// 			return reg(IDEN_Z_REG);
+// 		default: ;
+// 			char buf[CUSTOM_ERR_LEN] = {0};
+// 			sprintf(buf, "Error: No such identifier called %d, unable to get register\n", iden);
+// 			custom_err(buf);
+// 			return reg(IDEN_X_REG);
+// 	}
+// }
 
-Register iden2reg_w(int iden){
-	switch (iden){
-		case IDEN_X:
-			return reg(IDEN_X_REG_W);
-		case IDEN_Y:
-			return reg(IDEN_Y_REG_W);
-		case IDEN_Z:
-			return reg(IDEN_Z_REG_W);
-		default: ;
-			char buf[CUSTOM_ERR_LEN] = {0};
-			sprintf(buf, "Error: No such identifier called %d, unable to get register\n", iden);
-			custom_err(buf);
-			return reg(IDEN_X_REG_W);
-	}
-}
+// Register iden2reg_w(int iden){
+// 	switch (iden){
+// 		case IDEN_X:
+// 			return reg(IDEN_X_REG_W);
+// 		case IDEN_Y:
+// 			return reg(IDEN_Y_REG_W);
+// 		case IDEN_Z:
+// 			return reg(IDEN_Z_REG_W);
+// 		default: ;
+// 			char buf[CUSTOM_ERR_LEN] = {0};
+// 			sprintf(buf, "Error: No such identifier called %d, unable to get register\n", iden);
+// 			custom_err(buf);
+// 			return reg(IDEN_X_REG_W);
+// 	}
+// }
 
 Memory iden2mem(int iden){
 	switch (iden){
@@ -528,7 +561,7 @@ Memory iden2mem(int iden){
 	}
 }
 
-ISA_Node *head = NULL, *tail = NULL;
+ISA_Node *asm_head = NULL, *asm_tail = NULL;
 
 ISA get_isa(OPCODE opcode, Space rd, Space rs1, Space rs2){
 	ISA isa;
@@ -625,119 +658,105 @@ void isa2asm(char *asm_buf, ISA isa){
 }
 
 void init_asm(){
-	if(head != NULL){
-		free(head);
+	if(asm_head != NULL){
+		free(asm_head);
 	}
-	head = (ISA_Node*)malloc(sizeof(ISA_Node));
-	head->next = head;
-	head->prev = head;
-	tail = head;
+	asm_head = (ISA_Node*)malloc(sizeof(ISA_Node));
+	asm_head->next = asm_head;
+	asm_head->prev = asm_head;
+	asm_tail = asm_head;
 }
 
-ISA_Node *insert_asm(ISA asm_code){
-	if(head == NULL){
+ISA_Node *insert_asm(ISA isa, int is_print){
+	if(asm_head == NULL){
 		init_asm();
 	}
+	char asm_buf[ASM_BUF_LEN] = {0};
+	if(is_print){
+		print_isa(isa, asm_buf);
+	}
+
 	ISA_Node *node = (ISA_Node*)malloc(sizeof(ISA_Node));
-	node->isa = asm_code;
-	node->prev = tail;
-	node->next = tail->next;
-	tail->next = node;
-	tail->next->prev = node;
-	tail = node;
+	node->isa = isa;
+	strncpy(node->asm_code, asm_buf, ASM_BUF_LEN);
+	node->prev = asm_tail;
+	node->next = asm_tail->next;
+	asm_tail->next = node;
+	asm_tail->next->prev = node;
+	asm_tail = node;
 	return node;
+}
+
+void print_isa(ISA isa, char *buff){
+	char asm_buf[ASM_BUF_LEN] = {0};
+	if(buff != NULL){
+		strncpy(buff, asm_buf, ASM_BUF_LEN);
+	}
+
+	isa2asm(asm_buf, isa);
+	printf("%s", asm_buf);
+}
+
+void show_asm(){
+	ISA_Node *current = asm_head->next;
+	while(current != asm_head){
+		print_isa(current->isa, NULL);
+		current = current->next;
+	}
 }
 
 void set_reg(Register reg, int val){
 	if(val >= 0){
-		// printf("add r%d 0 %d\n", reg.n, val);
 		Constant c1 = {0}, c2 = {val};
 		ISA isa = {OP_ADD, reg2space(reg), const2space(c1), const2space(c2)};
-		
-		// c1.c = 0;
-		// c2.c = val;
-		// isa.opcode = OP_ADD;
-		// isa.rd = reg2space(reg);
-		// isa.rs1 = const2space(c1);
-		// isa.rs2 = const2space(c2);
-		
-		char asm_buf[ASM_BUF_LEN] = {0};
-		isa2asm(asm_buf, isa);
-		printf("%s", asm_buf);
+		insert_asm(isa, IS_PRINT_ASM);
 	}else{
-		// printf("sub r%d 0 %d\n", reg.n, -val);
 		Constant c1 = {0}, c2 = {-val};
 		ISA isa = {OP_SUB, reg2space(reg), const2space(c1), const2space(c2)};
-		// ISA isa;
-		// Constant c1, c2;
-		// c1.c = 0;
-		// c2.c = val;
-		// isa.opcode = OP_SUB;
-		// isa.rd = reg2space(reg);
-		// isa.rs1 = const2space(c1);
-		// isa.rs2 = const2space(c2);
-		
-		char asm_buf[ASM_BUF_LEN] = {0};
-		isa2asm(asm_buf, isa);
-		printf("%s", asm_buf);
+		insert_asm(isa, IS_PRINT_ASM);
 	}
 }
 
-ISA asm_store(Memory mem, Register reg){
-	// printf("store [%d] r%d\n", mem.addr, reg.n);
+ISA isa_store(Memory mem, Register reg){
 	ISA isa;
 	isa.opcode = OP_STORE;
 	isa.rd = mem2space(mem);
 	isa.rs1 = reg2space(reg);
 
-	char asm_buf[ASM_BUF_LEN] = {0};
-	isa2asm(asm_buf, isa);
-	printf("%s", asm_buf);
+	insert_asm(isa, IS_PRINT_ASM);
 	return isa;
 }
 
-ISA asm_load(Register reg, Memory mem){
-	// printf("load r%d [%d]\n", reg.n, mem.addr);
+ISA isa_load(Register reg, Memory mem){
 	ISA isa;
 	isa.opcode = OP_LOAD;
 	isa.rd = reg2space(reg);
 	isa.rs1 = mem2space(mem);
 
-	char asm_buf[ASM_BUF_LEN] = {0};
-	isa2asm(asm_buf, isa);
-	printf("%s", asm_buf);
+	insert_asm(isa, IS_PRINT_ASM);
 	return isa;
 }
 
-ISA asm_arithmetic(OPCODE opcode, Register rd, Space s1, Space s2){
+ISA isa_arithmetic(OPCODE opcode, Register rd, Space s1, Space s2){
 	ISA isa = {opcode, reg2space(rd), s1, s2};
-	// isa.opcode = opcode;
-	// isa.rd = reg2space(rd);
-	// isa.rs1 = s1;
-	// isa.rs2 = s2;
-
-	char asm_buf[ASM_BUF_LEN] = {0};
-	isa2asm(asm_buf, isa);
-	printf("%s", asm_buf);
+	insert_asm(isa, IS_PRINT_ASM);
 	return isa;
 }
 
 void push(Register reg, int *stack_ptr){
-	asm_store(mem(*stack_ptr), reg);
-	// (*stack_ptr)+=4;
+	isa_store(mem(*stack_ptr), reg);
 	stack_ptr_inc(stack_ptr);
 }
 
 void pop(Register reg, int *stack_ptr){
-	// (*stack_ptr)-=4;
 	stack_ptr_dec(stack_ptr);
-	asm_load(reg, mem(*stack_ptr));
+	isa_load(reg, mem(*stack_ptr));
 }
 
 void assign(int iden, int *stack_ptr){
 	// Register target_reg = iden2reg_w(iden);
 	Register target_reg = iden2reg(iden);
-	asm_load(target_reg, mem(get_stack_ptr_dec(*stack_ptr)));
+	isa_load(target_reg, mem(get_stack_ptr_dec(*stack_ptr)));
 }
 
 AST* is_bottom_pre(AST *root){
@@ -761,7 +780,7 @@ void arithmetic_sp(AST *root, OPCODE opcode, int *stack_ptr){
 		pop(reg(RSV_RS2_REG), stack_ptr);
 		pop(reg(RSV_RS1_REG), stack_ptr);
 
-		asm_arithmetic(opcode, reg(RSV_RD_REG), reg2space(reg(RSV_RS1_REG)), reg2space(reg(RSV_RS2_REG)));
+		isa_arithmetic(opcode, reg(RSV_RD_REG), reg2space(reg(RSV_RS1_REG)), reg2space(reg(RSV_RS2_REG)));
 		push(reg(RSV_RD_REG), stack_ptr);
 	}else{
 		Register rs1, rs2;
@@ -778,49 +797,8 @@ void arithmetic_sp(AST *root, OPCODE opcode, int *stack_ptr){
 			rs1 = reg(RSV_RS1_REG);
 			pop(rs1, stack_ptr);
 		}
-		asm_arithmetic(opcode, reg(RSV_RD_REG), reg2space(rs1), reg2space(rs2));
+		isa_arithmetic(opcode, reg(RSV_RD_REG), reg2space(rs1), reg2space(rs2));
 		push(reg(RSV_RD_REG), stack_ptr);
-	}
-}
-
-void arithmetic(OPCODE opcode, int *stack_ptr){
-	pop(reg(RSV_RS2_REG), stack_ptr);
-	pop(reg(RSV_RS1_REG), stack_ptr);
-
-	asm_arithmetic(opcode, reg(RSV_RD_REG), reg2space(reg(RSV_RS1_REG)), reg2space(reg(RSV_RS2_REG)));
-	push(reg(RSV_RD_REG), stack_ptr);
-}
-
-void inc_dec(AST *root, int *stack_ptr, int is_sub, int is_post){
-	AST *tmp = root->mid;
-	while (tmp->kind != IDENTIFIER) tmp = tmp->mid;
-
-	Constant c0, c1;
-	c0.c = 0;
-	c1.c = 1;
-	Register target_reg = iden2reg(tmp->val);
-	// Register target_reg = iden2reg_w(tmp->val), source_reg = iden2reg_r(tmp->val), temp_reg = reg(RSV_RD_REG);
-	OPCODE opcode = OP_ADD; 
-
-	if(is_sub){
-		opcode = OP_SUB;
-	}
-	if(is_post){
-		// Postfix Increment/Decrement
-		push(target_reg, stack_ptr);
-		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
-
-		// push(source_reg, stack_ptr);
-		// asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
-		// asm_arithmetic(OP_ADD, source_reg, reg2space(target_reg), const2space(c0));
-	}else{
-		// Prefix Increment/Decrement
-		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
-		push(target_reg, stack_ptr);
-
-		// asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
-		// asm_arithmetic(opcode, temp_reg, reg2space(source_reg), const2space(c1));
-		// push(temp_reg, stack_ptr);
 	}
 }
 
@@ -840,10 +818,10 @@ void inc_dec_sp(AST *root, int *stack_ptr, int is_sub, int is_post){
 	if(is_post){
 		// Postfix Increment/Decrement
 		push(target_reg, stack_ptr);
-		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+		isa_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
 	}else{
 		// Prefix Increment/Decrement
-		asm_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
+		isa_arithmetic(opcode, target_reg, reg2space(target_reg), const2space(c1));
 	}
 }
 
@@ -901,7 +879,6 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 	}else if(root->kind == IDENTIFIER){
 		if(mode == COMPUTE_MODE)
 		push(iden2reg(root->val), stack_ptr);
-			// push(iden2reg_r(root->val), stack_ptr);
 		return;
 	}else if(root->kind == CONSTANT){
 		set_reg(reg(RSV_RD_REG), root->val);
@@ -923,7 +900,7 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 
 		// Pop top to r2
 		pop(src_reg, stack_ptr);
-		asm_arithmetic(OP_SUB, target_reg, const2space(c1), reg2space(src_reg));
+		isa_arithmetic(OP_SUB, target_reg, const2space(c1), reg2space(src_reg));
 
 		// Push rd to top
 		push(target_reg, stack_ptr);
@@ -948,30 +925,16 @@ void codegen(AST *root) {
 	int stack_ptr = mem_addr(3);
 
 	// Load to register
-	asm_load(iden2reg(IDEN_X), iden2mem(IDEN_X));
-	asm_load(iden2reg(IDEN_Y), iden2mem(IDEN_Y));
-	asm_load(iden2reg(IDEN_Z), iden2mem(IDEN_Z));
-	
-	// Registers for reading
-	// asm_load(iden2reg_r(IDEN_X), iden2mem(IDEN_X));
-	// asm_load(iden2reg_r(IDEN_Y), iden2mem(IDEN_Y));
-	// asm_load(iden2reg_r(IDEN_Z), iden2mem(IDEN_Z));
-	// Registers for writing
-	// asm_load(iden2reg_w(IDEN_X), iden2mem(IDEN_X));
-	// asm_load(iden2reg_w(IDEN_Y), iden2mem(IDEN_Y));
-	// asm_load(iden2reg_w(IDEN_Z), iden2mem(IDEN_Z));
+	// isa_load(iden2reg(IDEN_X), iden2mem(IDEN_X));
+	// isa_load(iden2reg(IDEN_Y), iden2mem(IDEN_Y));
+	// isa_load(iden2reg(IDEN_Z), iden2mem(IDEN_Z));
 
 	generate_code(root, &stack_ptr, COMPUTE_MODE);
 
 	// Store back to memory
-	asm_store(iden2mem(IDEN_X), iden2reg(IDEN_X));
-	asm_store(iden2mem(IDEN_Y), iden2reg(IDEN_Y));
-	asm_store(iden2mem(IDEN_Z), iden2reg(IDEN_Z));
-
-	// Registers for writing
-	// asm_store(iden2mem(IDEN_X), iden2reg_w(IDEN_X));
-	// asm_store(iden2mem(IDEN_Y), iden2reg_w(IDEN_Y));
-	// asm_store(iden2mem(IDEN_Z), iden2reg_w(IDEN_Z));
+	// isa_store(iden2mem(IDEN_X), iden2reg(IDEN_X));
+	// isa_store(iden2mem(IDEN_Y), iden2reg(IDEN_Y));
+	// isa_store(iden2mem(IDEN_Z), iden2reg(IDEN_Z));
 }
 
 void freeAST(AST *now) {
