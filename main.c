@@ -427,7 +427,10 @@ void semantic_check(AST *now) {
 void custom_err(char *str){
 	char msg[CUSTOM_ERR_LEN] = {0};
 	sprintf(msg, "%s\n", str);
-	perror(msg);	
+	if(DEBUG){
+		err(msg);
+	}
+	// perror(msg);	
 }
 
 int mem_addr(int n){
