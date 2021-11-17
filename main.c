@@ -836,8 +836,9 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 	}else if(root->kind == POSTDEC){
 		inc_dec(root, stack_ptr, 1, 1);
 	}else if(root->kind == IDENTIFIER){
-		if(mode == COMPUTE_MODE)
-		push(iden2reg(root->val), stack_ptr);
+		if(mode == COMPUTE_MODE){
+			push(iden2reg(root->val), stack_ptr);
+		}
 		return;
 	}else if(root->kind == CONSTANT){
 		set_reg(reg(RSV_RD_REG), root->val);
