@@ -513,38 +513,6 @@ Register iden2reg(int iden){
 	}
 }
 
-// Register iden2reg_r(int iden){
-// 	switch (iden){
-// 		case IDEN_X:
-// 			return reg(IDEN_X_REG);
-// 		case IDEN_Y:
-// 			return reg(IDEN_Y_REG);
-// 		case IDEN_Z:
-// 			return reg(IDEN_Z_REG);
-// 		default: ;
-// 			char buf[CUSTOM_ERR_LEN] = {0};
-// 			sprintf(buf, "Error: No such identifier called %d, unable to get register\n", iden);
-// 			custom_err(buf);
-// 			return reg(IDEN_X_REG);
-// 	}
-// }
-
-// Register iden2reg_w(int iden){
-// 	switch (iden){
-// 		case IDEN_X:
-// 			return reg(IDEN_X_REG_W);
-// 		case IDEN_Y:
-// 			return reg(IDEN_Y_REG_W);
-// 		case IDEN_Z:
-// 			return reg(IDEN_Z_REG_W);
-// 		default: ;
-// 			char buf[CUSTOM_ERR_LEN] = {0};
-// 			sprintf(buf, "Error: No such identifier called %d, unable to get register\n", iden);
-// 			custom_err(buf);
-// 			return reg(IDEN_X_REG_W);
-// 	}
-// }
-
 Memory iden2mem(int iden){
 	switch (iden){
 		case IDEN_X:
@@ -774,7 +742,7 @@ AST* is_bottom_pre(AST *root){
 	return temp;
 }
 
-void arithmetic_sp(AST *root, OPCODE opcode, int *stack_ptr){
+void arithmetic(AST *root, OPCODE opcode, int *stack_ptr){
 	AST *lhs_pre = is_bottom_pre(root->lhs), *rhs_pre = is_bottom_pre(root->rhs);
 	if(lhs_pre == NULL && rhs_pre == NULL){
 		pop(reg(RSV_RS2_REG), stack_ptr);
@@ -802,7 +770,7 @@ void arithmetic_sp(AST *root, OPCODE opcode, int *stack_ptr){
 	}
 }
 
-void inc_dec_sp(AST *root, int *stack_ptr, int is_sub, int is_post){
+void inc_dec(AST *root, int *stack_ptr, int is_sub, int is_post){
 	AST *tmp = root->mid;
 	while (tmp->kind != IDENTIFIER) tmp = tmp->mid;
 
@@ -850,32 +818,23 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 
 		assign(tmp->val, stack_ptr);
 	}else if(root->kind == ADD){
-		// arithmetic(OP_ADD, stack_ptr);
-		arithmetic_sp(root, OP_ADD, stack_ptr);
+		arithmetic(root, OP_ADD, stack_ptr);
 	}else if(root->kind == SUB){
-		// arithmetic(OP_SUB, stack_ptr);
-		arithmetic_sp(root, OP_SUB, stack_ptr);
+		arithmetic(root, OP_SUB, stack_ptr);
 	}else if(root->kind == MUL){
-		// arithmetic(OP_MUL, stack_ptr);
-		arithmetic_sp(root, OP_MUL, stack_ptr);
+		arithmetic(root, OP_MUL, stack_ptr);
 	}else if(root->kind == DIV){
-		// arithmetic(OP_DIV, stack_ptr);
-		arithmetic_sp(root, OP_DIV, stack_ptr);
+		arithmetic(root, OP_DIV, stack_ptr);
 	}else if(root->kind == REM){
-		// arithmetic(OP_REM, stack_ptr);
-		arithmetic_sp(root, OP_REM, stack_ptr);
+		arithmetic(root, OP_REM, stack_ptr);
 	}else if(root->kind == PREINC){
-		// inc_dec(root, stack_ptr, 0, 0);
-		inc_dec_sp(root, stack_ptr, 0, 0);
+		inc_dec(root, stack_ptr, 0, 0);
 	}else if(root->kind == PREDEC){
-		// inc_dec(root, stack_ptr, 1, 0);
-		inc_dec_sp(root, stack_ptr, 1, 0);
+		inc_dec(root, stack_ptr, 1, 0);
 	}else if(root->kind == POSTINC){
-		// inc_dec(root, stack_ptr, 0, 1);
-		inc_dec_sp(root, stack_ptr, 0, 1);
+		inc_dec(root, stack_ptr, 0, 1);
 	}else if(root->kind == POSTDEC){
-		// inc_dec(root, stack_ptr, 1, 1);
-		inc_dec_sp(root, stack_ptr, 1, 1);
+		inc_dec(root, stack_ptr, 1, 1);
 	}else if(root->kind == IDENTIFIER){
 		if(mode == COMPUTE_MODE)
 		push(iden2reg(root->val), stack_ptr);
