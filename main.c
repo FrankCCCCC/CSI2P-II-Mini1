@@ -816,6 +816,12 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 	}
 
 	if(root->kind == ASSIGN){
+		AST *rhs_pre = is_bottom_pre(root->rhs);
+		if(rhs_pre != NULL){
+			Register target_reg = iden2reg(rhs_pre->mid->val);;
+			push(target_reg, stack_ptr);
+		}
+
 		AST *tmp = root->lhs;
 		while (tmp->kind == LPAR) tmp = tmp->mid;
 
@@ -853,20 +859,38 @@ void generate_code(AST *root, int *stack_ptr, CODE_GEN_MODE mode){
 		generate_code(root->mid, stack_ptr, mode);
 	}else if(root->kind == PLUS){
 		generate_code(root->mid, stack_ptr, COMPUTE_MODE);
+		AST *mid_pre = is_bottom_pre(root->mid);
+		if(mid_pre != NULL){
+			Register target_reg = iden2reg(mid_pre->mid->val);;
+			push(target_reg, stack_ptr);
+		}
 	}else if(root->kind == MINUS){
 		// Traverse down
 		generate_code(root->mid, stack_ptr, COMPUTE_MODE);
+
+		AST *mid_pre = is_bottom_pre(root->mid);
+		if(mid_pre == NULL){
+			Constant c1;
+			c1.c = 0;
+			Register target_reg = reg(RSV_RD_REG), src_reg = reg(RSV_RS2_REG);
+
+			// Pop top to r2
+			pop(src_reg, stack_ptr);
+			isa_arithmetic(OP_SUB, target_reg, const2space(c1), reg2space(src_reg));
+
+			// Push rd to top
+			push(target_reg, stack_ptr);
+		}else{
+			Constant c1;
+			c1.c = 0;
+			Register target_reg = reg(RSV_RD_REG), src_reg = iden2reg(mid_pre->mid->val);;
+			
+			isa_arithmetic(OP_SUB, target_reg, const2space(c1), reg2space(src_reg));
+
+			// Push rd to top
+			push(target_reg, stack_ptr);
+		}
 		
-		Constant c1;
-		c1.c = 0;
-		Register target_reg = reg(RSV_RD_REG), src_reg = reg(RSV_RS2_REG);
-
-		// Pop top to r2
-		pop(src_reg, stack_ptr);
-		isa_arithmetic(OP_SUB, target_reg, const2space(c1), reg2space(src_reg));
-
-		// Push rd to top
-		push(target_reg, stack_ptr);
 	}else if(root->kind == END){
 		return;	
 	}else{
